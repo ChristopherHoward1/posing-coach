@@ -38,7 +38,7 @@ if [[ ! -f "CLAUDE.md" || ! -f "AGENTS.md" || ! -d ".git" ]]; then
   exit 1
 fi
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_ROOT=$(cd "$(git rev-parse --show-toplevel)" && pwd -P)
 CURRENT_DIR=$(pwd -P)
 if [[ "$REPO_ROOT" != "$CURRENT_DIR" ]]; then
   echo "Error: run this script from the repository root." >&2
