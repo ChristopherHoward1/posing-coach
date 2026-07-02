@@ -24,6 +24,12 @@ The priority is process quality, maintainability, review discipline, and enginee
 
 ---
 
+## Hand-pass ledger (while this repo serves as the first template hand-pass)
+
+This repo was instantiated by hand from `agentic-coding-template`. Any session that exercises the inherited scaffolding — hitting friction OR porting something cleanly — appends to `docs/handpass-ledger.md`. That ledger is the empirical spec for a future template; it is not itself a mandate to change the template. Template changes require friction-justification (recurrence across hand-passes, or measured cost), not a single logged observation.
+
+---
+
 ## Operating Principles
 
 Favor simple, reversible solutions.
@@ -124,7 +130,7 @@ When a triggered agent implements and pushes its branch but cannot open its own 
 
 Review every pull request against its issue, not from memory.
 
-Begin each review by running `scripts/review-context.sh <pr-number>` from the repository root. In one read-only pass it gathers the PR metadata, the linked issue and its acceptance criteria, the changed files, the diff (or a stat summary for large diffs), and the repository's lint and test results. It gathers context only — it makes no review decision.
+Begin each review by running the repository's lint + test gate — `python scripts/gate.py`, which runs `ruff check` and `pytest` — from the repository root with the project virtualenv active. Assemble the rest of the review context (PR metadata, the linked issue and its acceptance criteria, the changed files, and the diff) with `gh` directly. The donor template's one-command review-context helper is bash-coupled and has not been ported to this Python project; see `docs/handpass-ledger.md`. These steps gather context only — they make no review decision.
 
 Then apply engineering judgment the helper cannot: confirm scope was respected, evaluate each acceptance criterion individually, and decide to approve or request changes. The helper informs the review; it does not replace it.
 
