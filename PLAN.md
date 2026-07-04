@@ -19,152 +19,150 @@ This plan is jointly maintained by the Product Owner and the Staff Engineer.
 
 ## Current Objective
 
-**Milestone 1 is complete** (shipped via PR #7 — the Python gate — and PR #8 — the product
-slice; gate green on `main`). **No milestone is currently active.** Milestone 2 is not yet
-scoped; scoping it is a separate Product Owner decision and is deliberately *not* opened
-here. This plan currently holds the **M1 retrospective** and the open decisions it surfaced.
+**Milestone 2 is active.** Turn two poses into a single, normalization-aware similarity
+score. M1 delivered *estimation* (image → keypoints); M2 delivers the next load-bearing
+link — *scoring vs. a reference* — because that is what turns a keypoint extractor into a
+*coach*, and everything downstream (coaching feedback) depends on it. M2 deliberately
+surfaces the hardest hidden risk of the whole product — **pose normalization** (making a
+score invariant to body size and camera framing) — in the narrowest possible slice.
 
 ---
 
-## Milestone 1 — Single image → pose keypoints (JSON) — ✅ SHIPPED
+## Active Milestone
 
-**Why it existed (kept for cold-read).** A posing coach cannot score a pose, compare it to a
-reference, or give feedback until it can *reliably turn an image of a person into structured
-pose data*. Keypoint extraction is the foundational dependency of the entire product; every
-later capability sits on top of it. The narrowest slice that yields a real, verifiable
-artifact is therefore **one image → keypoints JSON**. Doing it first de-risked the core
-dependency (MediaPipe) and stood up the Python lint/test gate **before** any judgment logic
-existed to be judged. M1 was also the vehicle for this repo's hand-pass role: it is where the
-inherited bash gate was recarved to Python and the first portability friction was logged.
+### Milestone 2 — Pose comparison (scoring vs. a reference)
 
-**What shipped.**
-- **Gate (Issue #2 / PR #7).** `scripts/gate.py` runs `ruff check` + `pytest` through the
-  venv; `pyproject.toml` (ruff + pytest config); Python `.gitignore` entries. Empty-suite
-  `pytest` exit 5 is treated as pass. Functional parity with the bash gate — no enhancement.
-- **Product (Issue #3 / PR #8).** `pose_estimation.py`: `estimate_pose()` returns the first
-  detected pose's **33 landmarks** `{name, x, y, z, visibility}`, plus a thin argparse CLI
-  (`--image`, `--output`). `tests/test_pose_estimation.py` asserts the structure. Gate green
-  on `main` with the product test passing.
-- **Approach change from the original plan.** M1 was specified around the legacy
-  `mediapipe.solutions.pose` API. The installed `mediapipe==0.10.35` proved to be a
-  **Tasks-API-only** build (no `solutions` module at all), so the slice shipped on the
-  MediaPipe **Tasks API** (`PoseLandmarker`) against a **committed** model asset
-  (`models/pose_landmarker_lite.task`, ~5.8 MB, like the fixture image) for offline
-  hermeticity. No dependency change; milestone shape and acceptance criteria unchanged. See
-  ledger "M1 / product orient" and "M1 / product pivot".
+**Why this, why now.** Scoring is the pivot from "we can see the pose" to "we can say how
+close it is to a target." It is the direct dependency of coaching feedback, and its
+correctness hinges entirely on normalization — the one piece of hard engineering hiding in
+the product. Doing the *narrowest* scoring slice now de-risks normalization before any
+feedback logic is built on top of a score we don't trust.
 
-### Retrospective
+**The contract (concrete — normalization *is* the milestone).**
+1. **Translation-invariant:** re-center every landmark on the **mid-hip** (mean of
+   `LEFT_HIP`/`RIGHT_HIP`).
+2. **Scale-invariant:** divide coordinates by a **torso length** (mid-hip → mid-shoulder
+   distance).
+3. **Score** = visibility-weighted mean Euclidean distance across the 33 landmarks, in
+   **2-D (x, y)**. Lower = more similar; `0.0` = identical after normalization.
+4. **Deliberately NOT normalized:** rotation (a lean is *signal*, not noise) and **z**
+   (monocular depth from a single image is too noisy to score on). Named deferrals, not
+   oversights.
 
-**Per-artifact verdicts** (inherited scaffolding; detail in ledger Part A). The clean ports
-matter as much as the frictions — they are the evidence for what a template keeps untouched:
-- **Clean-verbatim:** `AGENTS.md`, `.github/ISSUE_TEMPLATE/implementation.md`,
-  `.github/PULL_REQUEST_TEMPLATE.md`. `new-issue.sh` also *ran* unmodified (but see its gap).
-  These are language-agnostic operating docs/contracts — they travel.
-- **Adapted:** `CLAUDE.md` (Review gate de-bashed to a command/role, not a script path);
-  `new-handoff.sh` + `trigger-agent.sh` (portable repo-root check, PR #6 — since dogfooded
-  clean on Windows during M1).
-- **Discarded+replaced:** the bash gate (`lint.sh` / test-harness / `review-context.sh`
-  orchestration) → `scripts/gate.py` + `pyproject.toml`; the `PLAN.md` "skeleton" that was
-  actually the donor's Milestone 1–12 history → this product plan.
-- **Not-yet-exercised:** none outstanding for M1.
+**Shape.**
+- **Core:** `compare_poses(pose_a, pose_b) -> float` operating on M1 keypoint lists (the
+  `{name,x,y,z,visibility}` structure), applying the contract above.
+- **CLI:** takes **two image paths**, runs M1's `estimate_pose` on each, prints the score.
+  A "reference" is simply the second image path the caller supplies — there is **no** stored
+  reference-pose library and **no** reference-loading mechanism (explicitly out of scope).
 
-**Held hypotheses (n=1 — recorded, NOT acted on).** This is hand-pass **n=1**, so *by
-construction* almost nothing meets the friction-justification bar (recurrence across ≥2
-hand-passes, OR a measured non-trivial cost). Each of these is evidence awaiting a second
-hand-pass to confirm recurrence — none is promoted to a template spec or build item:
-- Operating docs should name the review gate by command/role, not a hard-coded script path
-  (the `CLAUDE.md` → `review-context.sh` dangling reference).
-- A template should ship `PLAN.md` as a blank skeleton, not donor history.
-- Template scripts should use a portable repo-root check. Already fixed in this instance
-  (PR #6) with a strictly-better fix that blocked Windows work until landed — a strong
-  candidate, but still one hand-pass.
-- `pyproject.toml` / Python `.gitignore` / the very shape of the gate — these feed the gate
-  **open design question** below rather than a standalone change.
+**Acceptance criteria** (thresholds fixed here, not discovered in test code; single named
+constant `IDENTITY_TOL = 1e-9`):
+- **Identity:** `compare_poses(p, p)` for a real fixture pose → `< IDENTITY_TOL`.
+- **Translation-invariance:** a purely translated copy of a synthetic pose → `< IDENTITY_TOL`.
+- **Scale-invariance:** a uniformly scaled copy of a synthetic pose → `< IDENTITY_TOL`.
+- **Directional sanity:** a defined landmark perturbation **increases** the score
+  (strictly `> IDENTITY_TOL`, and above a small floor for a visible perturbation).
+- **End-to-end:** the fixture image scored **against itself** via `estimate_pose`
+  → `< IDENTITY_TOL` (compares the computed pose to itself, so no inference-noise tolerance
+  is needed — hence the tight bound rather than a loose `0.01`).
+- **Degenerate input:** missing / near-zero-visibility hips or shoulders (→ ~zero torso
+  length) has **defined, tested** behavior — raises `ValueError`, not a divide-by-zero.
+- `python scripts/gate.py` green (`ruff` clean + `pytest`).
 
-**Closest to earning a change (still held):** `new-issue.sh` renders no `## Dependencies`
-section, so `Depends on #2` had to be added to Issue #3 by hand. It has independent evidence
-in two contexts (the donor's own Milestone-12 note + this hand-pass). It is the first thing to
-confirm on hand-pass n=2 — but it stays a **hypothesis**, not a build item.
+The translation/scale/identity criteria run on **synthetic constructed keypoints** (no model,
+fast + hermetic); the end-to-end criterion exercises the real `estimate_pose` pipeline.
 
-**Named-but-held temptations (this system's Imagine→Automate failure mode).** Explicitly
-*not* acting on these tidy piles of n=1 annoyances:
-- "Fork a Python-flavored template now" from the pyproject / Python-`.gitignore` / `gate.py`
-  observations. n=1. **Held.**
-- "Adopt the portable repo-root check into the template." Low-risk and correct, but n=1, and
-  already fixed in this instance — no urgency. **Held.**
-- "Switch codex to `danger-full-access` so the agent does its own git," to erase the
-  edit-only-sandbox friction. n=1 machine finding that trades away sandbox safety. **Held**
-  (and routed to the migration log, below).
+**Out of scope for M2** (later milestones — do not let these creep in): natural-language or
+coaching feedback; any "good pose" pass/fail **judgment** or thresholds; rotation- or
+3-D-invariance; multi-person; video; UI; stored reference-pose libraries / reference loading.
 
-**Routed elsewhere — NOT template evidence.** Machine / shell-env findings belong in the
-PC-migration observe log, not this template ledger, because they say nothing about a generic
-template: venv-local toolchain (`.venv/Scripts`), codex auth (401 → `codex login`), the
-Windows **edit-only sandbox** (the agent cannot commit/push/run bash/reach network — the SE
-does all git for it), CRLF checkout. They shaped *how* M1 was executed but earn no template
-case.
+**Decomposition — one issue, one Codex dispatch.** Unlike M1 there is no harness half (the
+gate exists). Footprint: new `pose_comparison.py` + `tests/test_pose_comparison.py`; it
+*imports but does not modify* `pose_estimation.py`. Single, cleanly-scoped handoff — no
+dependency edge to manage.
 
-**What went right (worth keeping).** Role separation survived the port to real product code
-(see Open Decisions). The gate recarve executed with zero new friction beyond what was logged
-at plan time. "Artifacts over memory" paid off concretely: PR #7 was reported merged but was
-still open — the GitHub state, not the recollection, drove the next step.
+**Process improvement piloted in M2 (closes an M1 open decision).** The living-log broke
+down in M1 (implementation friction was reconstructed at the retro). Fix: any ledger Part B
+friction row is appended **on the feature branch and folded into the same PR**, and the M2
+review checklist explicitly verifies *"Part B row present in the final diff and correctly
+axised"* so a squash or review edit can't silently drop the finding.
+
+**Definition of done for M2:** the issue merged via PR, the gate green on the new tests, and
+any friction logged live in the ledger. Stop there — do not roll into feedback/judgment.
+
+---
+
+## Staff Engineer Recommendations
+
+**One issue, not two.** M2 is a single cohesive product module with no harness plumbing;
+splitting it would add ceremony without separation of concerns.
+
+**Keep the metric a distance, and keep it to one metric.** A visibility-weighted mean
+landmark distance is interpretable and directly testable. Resist joint-angle systems,
+Procrustes alignment, or a weighting framework — those are feedback-milestone or
+premature-generality work. Angles will earn their place when we translate a score into
+"straighten your elbow," not before.
+
+**Test the contract, not a photo.** The invariance guarantees are exact arithmetic, so they
+belong in synthetic-keypoint unit tests with a near-epsilon tolerance; the real image is for
+the end-to-end integration check only.
+
+---
+
+## Milestone History
+
+**M1 — Single image → pose keypoints (JSON) — shipped.** `pose_estimation.py`
+(`estimate_pose` → 33 landmarks `{name,x,y,z,visibility}` + argparse CLI) behind a Python
+lint/test gate (`scripts/gate.py`, `pyproject.toml`). Shipped via PR #7 (gate) and PR #8
+(product); retrospective in PR #9. Notable pivot: the installed `mediapipe==0.10.35` is a
+**Tasks-API-only** build (no legacy `solutions` module), so M1 shipped on the MediaPipe
+**Tasks API** against a committed `models/pose_landmarker_lite.task` model for offline
+hermeticity. Full record: [`docs/handpass-ledger.md`](docs/handpass-ledger.md).
+
+---
+
+## Risks
+
+- **Normalization robustness (M2's central risk).** The score is only as trustworthy as the
+  torso-length scale and mid-hip root; occluded hips/shoulders make both unstable.
+  Mitigation: visibility-weighting, the degenerate-input guard (raise on near-zero torso),
+  and synthetic invariance tests that pin the exact contract.
+- **Over-engineering (standing risk).** The pull to build angle systems / Procrustes /
+  weighting frameworks is the current concrete instance. Mitigation: one metric, one
+  normalization, tested; the friction gate governs any harness/template addition — ledger
+  rows are observations, not build orders.
+- **Toolchain is venv-local, not on PATH (standing).** ruff/pytest/python resolve only inside
+  `.venv/Scripts` (Windows layout). The gate and every verification step run with the venv
+  active. Ties into the Mac→PC migration open decision.
 
 ---
 
 ## Open Decisions
 
 - **Gate architecture — per-language copies vs a shared language-agnostic runner (OPEN
-  DESIGN QUESTION, do not resolve).** The bash gate read as discarded+replaced with an
-  obvious "the gate must be per-language" reading. The Portability Brief deliberately left
-  open whether a future template ships **per-language gate copies** or a **shared
-  language-agnostic runner** that calls per-language linters (`ruff`, `shellcheck`, …). This
-  is held as an open design question, **not** a decision; hand-pass n=2 (a third language)
-  is what would inform it.
-- **Did the living-ledger convention actually work? Partially — strengthen before M2.**
-  Planning-phase friction (orientation → decomposition) *was* captured live. But the
-  implementation-phase events (gate landing, the mediapipe falsification, the dispatch-#1
-  revert, the Tasks-API pivot) were **reconstructed at the retrospective**, not logged the
-  moment they occurred — because the ledger lives on protected `main` while implementation
-  happens on feature branches, making mid-branch appends awkward. Candidate fix (hypothesis,
-  not mandate): let each feature PR carry its own Part B append, or keep a scratch event log
-  during implementation that folds into the ledger at PR time. Decide before M2.
-- **Role separation survived the Python port — keep the model as-is.** Codex implemented real
-  **product** code (not just harness plumbing); author (Codex) / reviewer (SE) / merger (PO)
-  held throughout; and the boundary passed a *stress test* — the first product dispatch hit a
-  constraint conflict (forbidden Tasks API) and **escalated it back to the SE instead of
-  violating scope or fabricating**. The only blur is mechanical: the Windows edit-only
-  sandbox forces the SE to do the agent's commit/push/PR — a machine artifact (migration
-  log), not a flaw in the role model. No change to the role model is warranted.
-- **Verify feasibility claims by executing them (process).** Orientation logged
-  `mediapipe.solutions.pose` as feasible without ever running it; it was false and survived
-  to implementation. Before a future milestone depends on a library capability, exercise the
-  **exact** API in the venv — not just the top-level `import`.
-- **Reproducing the environment across machines (Mac→PC).** Python is venv-local here; a
-  future machine may differ. Pre-friction — observe and log toolchain drift in the migration
-  log before deciding anything. No environment-reproduction work is justified yet.
-- **`new-issue.sh` omits the template's `## Dependencies` section.** Recurred on Issue #3
-  (edge added by hand). Still **held** pending hand-pass n=2; the narrow fix (render the
-  section + a `--depends-on` flag) is not yet justified.
-- **Estimator swap beyond MediaPipe** — deferred until a second estimator is actually needed
-  (e.g. for a later scoring milestone). M1 shipped on the Tasks-API `PoseLandmarker` behind a
-  single-function seam; the seam is isolated, but no plugin system exists and none is
-  justified yet.
-
----
-
-## Risks
-
-- **Over-engineering (standing risk).** The pull to convert M1's pile of n=1 template
-  observations into a "Python template" fork is the current concrete instance. Mitigation:
-  the friction gate governs every harness/template addition — ledger rows are observations,
-  not build orders; promote only on recurrence (≥2 hand-passes) or measured cost.
-- **Toolchain is venv-local, not on PATH (standing).** ruff/pytest/python resolve only inside
-  `.venv/Scripts` (Windows layout). The gate and every verification step must run with the
-  venv active. Ties into the Mac→PC migration open decision.
-- **MediaPipe hermeticity — RESOLVED for M1.** Shipped on the Tasks API against a committed
-  `.task` model, so inference is offline and deterministic with no test-time network. Kept as
-  a note because a future model/tier change would revisit the committed-asset choice.
-- **Empty-suite bootstrap — RESOLVED.** `gate.py` treats `pytest` exit 5 as non-failing; the
-  M1 product test now makes the suite pass for the right reason.
+  DESIGN QUESTION, do not resolve).** The Portability Brief left open whether a future
+  template ships per-language gate copies or a shared runner that calls per-language linters.
+  Held open; hand-pass n=2 (a third language) is what would inform it.
+- **Living-log convention — being trialed in M2.** M1 showed it captured planning friction
+  live but reconstructed implementation friction at the retro. M2 pilots the fix: per-PR
+  Part B appends on the feature branch + a review gate that the row survives into the merge.
+  Assess after M2 whether the pilot worked before treating it as settled.
+- **Role separation survived the Python port — keep the model as-is.** M1 proved it on real
+  product code (author Codex / reviewer SE / merger PO), including a stress test where the
+  first dispatch escalated a constraint conflict instead of violating scope. The only blur is
+  mechanical (the Windows edit-only sandbox makes the SE do the agent's git — a machine
+  artifact, not a role flaw). No change warranted.
+- **Verify feasibility claims by executing them (process).** M1 orientation logged
+  `mediapipe.solutions.pose` as feasible without running it, and it was false. Before a
+  milestone depends on a library capability, exercise the **exact** API in the venv.
+- **Reproducing the environment across machines (Mac→PC).** Pre-friction — observe and log
+  toolchain drift in the migration log before deciding anything.
+- **`new-issue.sh` omits the template's `## Dependencies` section.** Recurred on Issue #3;
+  still **held** pending hand-pass n=2. (M2 is a single issue, so no dependency edge is
+  needed this milestone.)
+- **Estimator swap beyond MediaPipe** — deferred until a second estimator is actually needed.
+  The seam is isolated behind one function; no plugin system exists and none is justified yet.
 
 ---
 
