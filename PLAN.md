@@ -19,98 +19,24 @@ This plan is jointly maintained by the Product Owner and the Staff Engineer.
 
 ## Current Objective
 
-**Milestone 2 is active.** Turn two poses into a single, normalization-aware similarity
-score. M1 delivered *estimation* (image → keypoints); M2 delivers the next load-bearing
-link — *scoring vs. a reference* — because that is what turns a keypoint extractor into a
-*coach*, and everything downstream (coaching feedback) depends on it. M2 deliberately
-surfaces the hardest hidden risk of the whole product — **pose normalization** (making a
-score invariant to body size and camera framing) — in the narrowest possible slice.
-
----
-
-## Active Milestone
-
-### Milestone 2 — Pose comparison (scoring vs. a reference)
-
-**Why this, why now.** Scoring is the pivot from "we can see the pose" to "we can say how
-close it is to a target." It is the direct dependency of coaching feedback, and its
-correctness hinges entirely on normalization — the one piece of hard engineering hiding in
-the product. Doing the *narrowest* scoring slice now de-risks normalization before any
-feedback logic is built on top of a score we don't trust.
-
-**The contract (concrete — normalization *is* the milestone).**
-1. **Translation-invariant:** re-center every landmark on the **mid-hip** (mean of
-   `LEFT_HIP`/`RIGHT_HIP`).
-2. **Scale-invariant:** divide coordinates by a **torso length** (mid-hip → mid-shoulder
-   distance).
-3. **Score** = visibility-weighted mean Euclidean distance across the 33 landmarks, in
-   **2-D (x, y)**. Lower = more similar; `0.0` = identical after normalization.
-4. **Deliberately NOT normalized:** rotation (a lean is *signal*, not noise) and **z**
-   (monocular depth from a single image is too noisy to score on). Named deferrals, not
-   oversights.
-
-**Shape.**
-- **Core:** `compare_poses(pose_a, pose_b) -> float` operating on M1 keypoint lists (the
-  `{name,x,y,z,visibility}` structure), applying the contract above.
-- **CLI:** takes **two image paths**, runs M1's `estimate_pose` on each, prints the score.
-  A "reference" is simply the second image path the caller supplies — there is **no** stored
-  reference-pose library and **no** reference-loading mechanism (explicitly out of scope).
-
-**Acceptance criteria** (thresholds fixed here, not discovered in test code; single named
-constant `IDENTITY_TOL = 1e-9`):
-- **Identity:** `compare_poses(p, p)` for a real fixture pose → `< IDENTITY_TOL`.
-- **Translation-invariance:** a purely translated copy of a synthetic pose → `< IDENTITY_TOL`.
-- **Scale-invariance:** a uniformly scaled copy of a synthetic pose → `< IDENTITY_TOL`.
-- **Directional sanity:** a defined landmark perturbation **increases** the score
-  (strictly `> IDENTITY_TOL`, and above a small floor for a visible perturbation).
-- **End-to-end:** the fixture image scored **against itself** via `estimate_pose`
-  → `< IDENTITY_TOL` (compares the computed pose to itself, so no inference-noise tolerance
-  is needed — hence the tight bound rather than a loose `0.01`).
-- **Degenerate input:** missing / near-zero-visibility hips or shoulders (→ ~zero torso
-  length) has **defined, tested** behavior — raises `ValueError`, not a divide-by-zero.
-- `python scripts/gate.py` green (`ruff` clean + `pytest`).
-
-The translation/scale/identity criteria run on **synthetic constructed keypoints** (no model,
-fast + hermetic); the end-to-end criterion exercises the real `estimate_pose` pipeline.
-
-**Out of scope for M2** (later milestones — do not let these creep in): natural-language or
-coaching feedback; any "good pose" pass/fail **judgment** or thresholds; rotation- or
-3-D-invariance; multi-person; video; UI; stored reference-pose libraries / reference loading.
-
-**Decomposition — one issue, one Codex dispatch.** Unlike M1 there is no harness half (the
-gate exists). Footprint: new `pose_comparison.py` + `tests/test_pose_comparison.py`; it
-*imports but does not modify* `pose_estimation.py`. Single, cleanly-scoped handoff — no
-dependency edge to manage.
-
-**Process improvement piloted in M2 (closes an M1 open decision).** The living-log broke
-down in M1 (implementation friction was reconstructed at the retro). Fix: any ledger Part B
-friction row is appended **on the feature branch and folded into the same PR**, and the M2
-review checklist explicitly verifies *"Part B row present in the final diff and correctly
-axised"* so a squash or review edit can't silently drop the finding.
-
-**Definition of done for M2:** the issue merged via PR, the gate green on the new tests, and
-any friction logged live in the ledger. Stop there — do not roll into feedback/judgment.
-
----
-
-## Staff Engineer Recommendations
-
-**One issue, not two.** M2 is a single cohesive product module with no harness plumbing;
-splitting it would add ceremony without separation of concerns.
-
-**Keep the metric a distance, and keep it to one metric.** A visibility-weighted mean
-landmark distance is interpretable and directly testable. Resist joint-angle systems,
-Procrustes alignment, or a weighting framework — those are feedback-milestone or
-premature-generality work. Angles will earn their place when we translate a score into
-"straighten your elbow," not before.
-
-**Test the contract, not a photo.** The invariance guarantees are exact arithmetic, so they
-belong in synthetic-keypoint unit tests with a near-epsilon tolerance; the real image is for
-the end-to-end integration check only.
+**Milestones 1 and 2 are complete.** M1 delivered *estimation* (image → keypoints JSON); M2
+delivered *scoring* (two poses → a normalization-aware similarity number). **No milestone is
+currently active.** Milestone 3 is not yet scoped — the natural next link in the arc is
+**coaching feedback** (turning a score/per-joint difference into human guidance), but scoping
+it is a separate Product Owner decision and is deliberately *not* opened here.
 
 ---
 
 ## Milestone History
+
+**M2 — Pose comparison (scoring vs. a reference) — shipped.** `pose_comparison.py`
+(`compare_poses` → visibility-weighted mean normalized landmark distance: mid-hip root,
+torso-length scale, 2-D; `IDENTITY_TOL = 1e-9`; `ValueError` guards; a thin CLI reusing
+`estimate_pose`) + 7 invariance/structure tests. Scoped in PR #10, shipped via PR #12. A
+smooth **"warm-harness"** milestone — a single clean Codex dispatch, no pivot, all criteria
+green on first host verification, **no new template friction**. The central risk
+(normalization) was de-risked exactly as intended, pinned by synthetic invariance tests. The
+living-log pilot (see Open Decisions) worked.
 
 **M1 — Single image → pose keypoints (JSON) — shipped.** `pose_estimation.py`
 (`estimate_pose` → 33 landmarks `{name,x,y,z,visibility}` + argparse CLI) behind a Python
@@ -124,14 +50,11 @@ hermeticity. Full record: [`docs/handpass-ledger.md`](docs/handpass-ledger.md).
 
 ## Risks
 
-- **Normalization robustness (M2's central risk).** The score is only as trustworthy as the
-  torso-length scale and mid-hip root; occluded hips/shoulders make both unstable.
-  Mitigation: visibility-weighting, the degenerate-input guard (raise on near-zero torso),
-  and synthetic invariance tests that pin the exact contract.
-- **Over-engineering (standing risk).** The pull to build angle systems / Procrustes /
-  weighting frameworks is the current concrete instance. Mitigation: one metric, one
-  normalization, tested; the friction gate governs any harness/template addition — ledger
-  rows are observations, not build orders.
+- **Over-engineering (standing risk).** Each milestone brings a fresh instance of the pull to
+  build speculative generality (M2's was joint-angle systems / Procrustes / weighting
+  frameworks; a feedback milestone will bring its own). Mitigation: narrowest load-bearing
+  slice; the friction gate governs any harness/template addition — ledger rows are
+  observations, not build orders; promote only on recurrence (≥2 hand-passes) or measured cost.
 - **Toolchain is venv-local, not on PATH (standing).** ruff/pytest/python resolve only inside
   `.venv/Scripts` (Windows layout). The gate and every verification step run with the venv
   active. Ties into the Mac→PC migration open decision.
@@ -144,23 +67,33 @@ hermeticity. Full record: [`docs/handpass-ledger.md`](docs/handpass-ledger.md).
   DESIGN QUESTION, do not resolve).** The Portability Brief left open whether a future
   template ships per-language gate copies or a shared runner that calls per-language linters.
   Held open; hand-pass n=2 (a third language) is what would inform it.
-- **Living-log convention — being trialed in M2.** M1 showed it captured planning friction
-  live but reconstructed implementation friction at the retro. M2 pilots the fix: per-PR
-  Part B appends on the feature branch + a review gate that the row survives into the merge.
-  Assess after M2 whether the pilot worked before treating it as settled.
-- **Role separation survived the Python port — keep the model as-is.** M1 proved it on real
-  product code (author Codex / reviewer SE / merger PO), including a stress test where the
-  first dispatch escalated a constraint conflict instead of violating scope. The only blur is
-  mechanical (the Windows edit-only sandbox makes the SE do the agent's git — a machine
-  artifact, not a role flaw). No change warranted.
+- **Living-log convention — RESOLVED: adopt per-PR appends.** The M2 pilot worked. The Part B
+  row was written the moment the dispatch completed, committed on the feature branch as a
+  separate SE commit, folded into PR #12, and survived the squash to `main` — no retro-time
+  reconstruction (contrast M1's six reconstructed rows). **Adopted as standing practice** for
+  feature work, with a review-gate check that the row is present and correctly axised. Caveat:
+  validated on one *low-friction* milestone; a high-friction milestone would test it harder,
+  but the mechanism is low-cost and demonstrably fixes the M1 reconstruction problem.
+- **Does the Windows codex sandbox permit direct venv-Python execution? (open probe).** In M2,
+  Codex *claimed* it ran ruff/pytest in-sandbox ("7 passed") — but that is **unconfirmed** and
+  could be inferred from the code, so per the "verify by executing" lesson it is not logged as
+  fact. If true, the agent could self-verify and lighten the SE's host-verification burden,
+  nuancing the standing edit-only-sandbox finding. Settle it *deliberately* on a future
+  dispatch (e.g. have the agent write out a value obtainable only by executing, then check on
+  the host) — never from self-report.
+- **Role separation — settled, keep as-is.** Held again in M2 (author Codex / reviewer SE /
+  merger PO) — now confirmed across two milestones of real product code; M1 additionally
+  stress-tested it (a dispatch escalated a constraint conflict rather than violating scope).
+  The only blur is mechanical (the Windows edit-only sandbox makes the SE do the agent's git —
+  a machine artifact, not a role flaw). No change warranted.
 - **Verify feasibility claims by executing them (process).** M1 orientation logged
   `mediapipe.solutions.pose` as feasible without running it, and it was false. Before a
   milestone depends on a library capability, exercise the **exact** API in the venv.
 - **Reproducing the environment across machines (Mac→PC).** Pre-friction — observe and log
   toolchain drift in the migration log before deciding anything.
-- **`new-issue.sh` omits the template's `## Dependencies` section.** Recurred on Issue #3;
-  still **held** pending hand-pass n=2. (M2 is a single issue, so no dependency edge is
-  needed this milestone.)
+- **`new-issue.sh` omits the template's `## Dependencies` section.** Still **held** pending
+  hand-pass n=2. Did **not** recur in M2 (single-issue milestone, no dependency edge), so the
+  gap is milestone-shape-dependent — it bites only multi-issue milestones; evidence unchanged.
 - **Estimator swap beyond MediaPipe** — deferred until a second estimator is actually needed.
   The seam is isolated behind one function; no plugin system exists and none is justified yet.
 
