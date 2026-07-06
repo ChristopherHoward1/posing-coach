@@ -8,7 +8,7 @@ from pose_estimation import estimate_pose
 IDENTITY_TOL = 1e-9
 
 
-def _normalize_pose(pose: list[dict]) -> list[tuple[float, float]]:
+def normalize_pose(pose: list[dict]) -> list[tuple[float, float]]:
     """Return x/y coordinates centered on the hips and scaled by torso length."""
     landmarks = {landmark["name"]: landmark for landmark in pose}
     anchor_names = (
@@ -46,8 +46,8 @@ def _normalize_pose(pose: list[dict]) -> list[tuple[float, float]]:
 
 def compare_poses(pose_a: list[dict], pose_b: list[dict]) -> float:
     """Return the visibility-weighted mean normalized landmark distance."""
-    normalized_a = _normalize_pose(pose_a)
-    normalized_b = _normalize_pose(pose_b)
+    normalized_a = normalize_pose(pose_a)
+    normalized_b = normalize_pose(pose_b)
 
     weighted_distance = 0.0
     total_weight = 0.0
