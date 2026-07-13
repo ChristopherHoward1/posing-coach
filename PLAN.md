@@ -19,12 +19,36 @@ This plan is jointly maintained by the Product Owner and the Staff Engineer.
 
 ## Current Objective
 
-**Milestones 1–3 are complete.** M1 delivered *estimation* (image → keypoints JSON), M2
-*scoring* (two poses → a normalization-aware similarity number), and M3 the arc's first
-*actionable feedback* (per-joint directional cues). **No milestone is currently active.**
-Milestone 4 is not yet scoped — the natural next links in the arc are a "good pose" judgment
-layer or natural-language coaching, but scoping one is a separate Product Owner decision and
-is deliberately *not* opened here.
+**Milestone 4 is active: interior joint-angle feedback.** M1 delivered *estimation* (image →
+keypoints JSON), M2 *scoring* (a normalization-aware similarity number), and M3 the arc's first
+*actionable* feedback (per-joint directional cues). M4 adds the arc's first *anatomical*
+feedback — report a pose's interior joint angles and compare them to a **reference pose's**
+angles: signal M3's positional view structurally cannot express (a bent vs. straight elbow is
+new information, not a re-view of displacement).
+
+Settled at scoping:
+
+- **Interior angles only (narrowest load-bearing slice).** 8 three-point interior angles at
+  named vertices — elbow (shoulder→elbow→wrist), knee (hip→knee→ankle), shoulder-abduction
+  (elbow→shoulder→hip), hip (shoulder→hip→knee), bilateral; 2-D, degrees, [0,180].
+- **All orientation angles deferred.** Torso lean and shoulder/hip leveling go to a later
+  "orientation angles" milestone, where the image-frame directional machinery has ≥2 consumers
+  and earns itself. So Decision 2 (image-frame framing for *directional* cues) is deferred with
+  them — M4 is all-magnitude, all-anatomical, reference-free in framing.
+- **Framing enforced by a mirror test.** Interior angles carry no left/right handedness, so
+  they take anatomical names; a horizontally mirrored pose must yield *identical* angle
+  magnitudes.
+- **Reference-relative only** — compared to a reference pose's angles, never a hardcoded
+  "ideal" (the "good pose" judgment line M2/M3 also refused to cross).
+- **Reuse without a forced `normalize_pose` call** — reuses the M1 landmark contract and M2's
+  landmark-lookup/validation idiom; the normalize transform is a no-op for angle math
+  (translate + scale, no rotation) and drops the names M4 needs, so single-source-of-truth is
+  met via the shared contract, not the call.
+- **Footprint:** new files only (`pose_angles.py`, `tests/test_pose_angles.py`); one issue,
+  one dispatch, one PR.
+
+The other arc links — a "good pose" judgment layer, natural-language coaching, orientation
+angles — stay unopened; each is a separate Product Owner decision.
 
 ---
 
@@ -58,10 +82,12 @@ hermeticity. Full record: [`docs/handpass-ledger.md`](docs/handpass-ledger.md).
 ## Risks
 
 - **Over-engineering (standing risk).** Each milestone brings a fresh instance (M3's was the
-  pull to LLM phrasing / body-part taxonomy / anatomical mirroring; the next milestone will
-  bring its own). Mitigation: narrowest load-bearing slice; the friction gate governs any
-  harness/template addition — ledger rows are observations, not build orders; promote only on
-  recurrence (≥2 hand-passes) or measured cost.
+  pull to LLM phrasing / body-part taxonomy / anatomical mirroring; M4's was the pull to bundle
+  orientation angles + image-frame framing machinery in early — resolved at scoping by shipping
+  interior angles only and deferring all orientation angles to a milestone where that machinery
+  has ≥2 consumers; the next milestone will bring its own). Mitigation: narrowest load-bearing
+  slice; the friction gate governs any harness/template addition — ledger rows are observations,
+  not build orders; promote only on recurrence (≥2 hand-passes) or measured cost.
 - **Toolchain is venv-local, not on PATH (standing).** ruff/pytest/python resolve only inside
   `.venv/Scripts` (Windows layout). The gate and every verification step run with the venv
   active. Ties into the Mac→PC migration open decision.
