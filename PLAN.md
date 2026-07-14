@@ -19,40 +19,29 @@ This plan is jointly maintained by the Product Owner and the Staff Engineer.
 
 ## Current Objective
 
-**Milestone 4 is active: interior joint-angle feedback.** M1 delivered *estimation* (image →
-keypoints JSON), M2 *scoring* (a normalization-aware similarity number), and M3 the arc's first
-*actionable* feedback (per-joint directional cues). M4 adds the arc's first *anatomical*
-feedback — report a pose's interior joint angles and compare them to a **reference pose's**
-angles: signal M3's positional view structurally cannot express (a bent vs. straight elbow is
-new information, not a re-view of displacement).
-
-Settled at scoping:
-
-- **Interior angles only (narrowest load-bearing slice).** 8 three-point interior angles at
-  named vertices — elbow (shoulder→elbow→wrist), knee (hip→knee→ankle), shoulder-abduction
-  (elbow→shoulder→hip), hip (shoulder→hip→knee), bilateral; 2-D, degrees, [0,180].
-- **All orientation angles deferred.** Torso lean and shoulder/hip leveling go to a later
-  "orientation angles" milestone, where the image-frame directional machinery has ≥2 consumers
-  and earns itself. So Decision 2 (image-frame framing for *directional* cues) is deferred with
-  them — M4 is all-magnitude, all-anatomical, reference-free in framing.
-- **Framing enforced by a mirror test.** Interior angles carry no left/right handedness, so
-  they take anatomical names; a horizontally mirrored pose must yield *identical* angle
-  magnitudes.
-- **Reference-relative only** — compared to a reference pose's angles, never a hardcoded
-  "ideal" (the "good pose" judgment line M2/M3 also refused to cross).
-- **Reuse without a forced `normalize_pose` call** — reuses the M1 landmark contract and M2's
-  landmark-lookup/validation idiom; the normalize transform is a no-op for angle math
-  (translate + scale, no rotation) and drops the names M4 needs, so single-source-of-truth is
-  met via the shared contract, not the call.
-- **Footprint:** new files only (`pose_angles.py`, `tests/test_pose_angles.py`); one issue,
-  one dispatch, one PR.
-
-The other arc links — a "good pose" judgment layer, natural-language coaching, orientation
-angles — stay unopened; each is a separate Product Owner decision.
+**Milestones 1–4 are complete.** M1 delivered *estimation* (image → keypoints JSON), M2
+*scoring* (a normalization-aware similarity number), M3 the arc's first *actionable* feedback
+(per-joint directional cues), and M4 the arc's first *anatomical* feedback (interior joint
+angles vs. a reference pose). **No milestone is currently active.** The remaining arc links —
+a "good pose" judgment layer, natural-language coaching, or the **orientation-angles**
+milestone M4 scoped a home for (torso lean + shoulder/hip leveling, where the image-frame
+directional machinery would have ≥2 consumers) — each stay unopened pending a separate Product
+Owner decision.
 
 ---
 
 ## Milestone History
+
+**M4 — Interior joint-angle feedback — shipped.** The arc's first *anatomical* feedback —
+angle, not position (a bent vs. straight elbow is signal M3's displacement view structurally
+can't express). `pose_angles.py` (`joint_angles` → 8 vertex-named interior angles, bilateral
+elbow/knee/shoulder-abduction/hip, magnitudes in [0,180] via `atan2(abs(cross),dot)`;
+`angle_feedback` → reference-relative open/close sorted by |delta|; thin CLI; **no LLM**).
+Interior-only slice: all orientation angles deferred, so **no `normalize_pose` call** (interior
+angles are normalization-invariant) and no directional/image-frame cues. New files only —
+nothing shipped was touched (cleaner than M3's refactor). Clean single Codex dispatch; gate
+green (22 passed = prior 14 + M4's 8). Scoped in PR #19, shipped via PR #21; issue #20
+auto-closed. Full record: ledger.
 
 **M3 — Per-joint directional feedback — shipped.** The arc's first *actionable* feedback — the
 pivot from "how close" (a scalar) to "what to change" (localized, directional).
@@ -121,20 +110,35 @@ hermeticity. Full record: [`docs/handpass-ledger.md`](docs/handpass-ledger.md).
   and GitHub state agreed. The reported-merged-but-still-OPEN gap has not recurred. Kept here as
   a **closed record**, not an open watch-item, so it is not re-litigated from memory next
   session.
-- **Role separation — settled, keep as-is.** Confirmed across two milestones of real product
+- **Role separation — settled, keep as-is.** Confirmed across three milestones of real product
   code (author Codex / reviewer SE / merger-executed-by-SE / decision PO); M1 additionally
   stress-tested it. The only blur is mechanical (Windows edit-only sandbox → SE does the
   agent's git). No change warranted.
+- **PR-filing role — conflict surfaced (M4), held for explicit PO decision.** CLAUDE.md's
+  Implementation Handoff says "the filer is the Product Owner, not the Staff Engineer," yet
+  every implementation PR (#8/#12/#16/#19/#21) was filed by the SE under the PO's single
+  `ChristopherHoward1` account. The "PO files" line is a donor/Mac **two-actor assumption**
+  (agent pushes its own branch; a separate human files) that doesn't fit a one-GitHub-account
+  setup where the Windows sandbox is edit-only and the SE already does *all* mechanical git
+  (commit attributed to the agent, push, merge-execution) under that account. *SE
+  recommendation (Option A):* reword the CLAUDE.md paragraph so the SE performs the mechanical
+  git (commit attributed to agent / push / file PR / execute merge on PO instruction), with
+  author/reviewer separation resting on **commit attribution + PO merge authority**, not on who
+  runs `gh`. *Alternative (Option B):* keep the line, change practice — the PO physically files
+  PRs. **Held for the PO's call; the constitution (CLAUDE.md) is not edited on SE judgment
+  alone.** Logged in the ledger as a template-design-flaw edge.
 - **Verify feasibility claims by executing them (process).** M1 orientation logged
   `mediapipe.solutions.pose` as feasible without running it, and it was false. Before a
   milestone depends on a library capability, exercise the **exact** API in the venv.
-- **Living-log convention — adopted as default (not yet validated under load).** The
-  convention: per-PR Part B appends on the feature branch + a review-gate check that the row
-  survives the merge. It has held across M2 and M3 (n=2) — but both were relatively
-  low-friction implementations, so the mechanism held twice without being *stressed* twice.
-  Adopted-as-default is not the same as validated-in-use: the real test is the first
-  high-friction milestone, where implementation friction is messy and easy to lose. Until then,
-  do not claim the convention is proven against hard implementation work.
+- **Living-log convention — adopted; proven for low-friction, honestly untested under load
+  (n=3).** Per-PR Part B append on the feature branch + a review-gate check that the row
+  survives the merge. Held across M2, M3, and M4 (n=3) — but all three were low-friction
+  implementations, so the mechanism is well-established for the easy case and has still never
+  been *stressed* by messy, high-friction implementation. Reframed at the M4 retro: after three
+  clean holds, the "waiting for the first high-friction milestone" framing is strained — a warm
+  harness may simply keep producing low-friction milestones, so the load-test may never arrive
+  as a discrete event. Treat this as a **standing known-limitation** (proven-for-low-friction,
+  untested-under-load), not an active watch-item awaiting an imminent test.
 - **Reproducing the environment across machines (Mac→PC).** Pre-friction — observe and log
   toolchain drift in the migration log before deciding anything.
 - **`new-issue.sh` omits the template's `## Dependencies` section.** Still **held** pending
