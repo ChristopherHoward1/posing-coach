@@ -122,7 +122,7 @@ PR Expectations:
 
 Do not implement the feature, spawn a sub-agent, or use Claude Code's Agent tool to perform implementation work. The handoff is a boundary — cross it only through the external agent the Product Owner designates.
 
-When a triggered agent implements and pushes its branch but cannot open its own pull request (e.g. the sandbox cannot reach api.github.com), the Product Owner files the PR from the agent's pushed branch using the agent's provided PR body. The Staff Engineer then reviews the diff on its merits. The filer is the Product Owner, not the Staff Engineer; this preserves the author/reviewer separation.
+On this single-GitHub-account setup, the implementing agent's Windows sandbox is edit-only — it can neither push its branch nor open a pull request. The Staff Engineer therefore performs the mechanical git under the Product Owner's account: commit the agent's work attributed to it (`Co-authored-by: <agent>`), push the branch, and open the pull request from the agent's provided body. Author/reviewer separation is preserved by that commit attribution (the agent authored the code) and by the Product Owner retaining merge authority — their "merge X" instruction triggers the SE-executed `gh pr merge` — not by who runs `gh`. The Staff Engineer reviews the diff on its merits; the Product Owner makes the merge decision.
 
 ---
 
