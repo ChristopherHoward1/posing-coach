@@ -114,19 +114,17 @@ hermeticity. Full record: [`docs/handpass-ledger.md`](docs/handpass-ledger.md).
   code (author Codex / reviewer SE / merger-executed-by-SE / decision PO); M1 additionally
   stress-tested it. The only blur is mechanical (Windows edit-only sandbox → SE does the
   agent's git). No change warranted.
-- **PR-filing role — conflict surfaced (M4), held for explicit PO decision.** CLAUDE.md's
-  Implementation Handoff says "the filer is the Product Owner, not the Staff Engineer," yet
-  every implementation PR (#8/#12/#16/#19/#21) was filed by the SE under the PO's single
-  `ChristopherHoward1` account. The "PO files" line is a donor/Mac **two-actor assumption**
-  (agent pushes its own branch; a separate human files) that doesn't fit a one-GitHub-account
-  setup where the Windows sandbox is edit-only and the SE already does *all* mechanical git
-  (commit attributed to the agent, push, merge-execution) under that account. *SE
-  recommendation (Option A):* reword the CLAUDE.md paragraph so the SE performs the mechanical
-  git (commit attributed to agent / push / file PR / execute merge on PO instruction), with
-  author/reviewer separation resting on **commit attribution + PO merge authority**, not on who
-  runs `gh`. *Alternative (Option B):* keep the line, change practice — the PO physically files
-  PRs. **Held for the PO's call; the constitution (CLAUDE.md) is not edited on SE judgment
-  alone.** Logged in the ledger as a template-design-flaw edge.
+- **PR-filing role — RESOLVED (Option A: CLAUDE.md reworded to match practice).** *Conflict:*
+  CLAUDE.md said "the filer is the Product Owner, not the Staff Engineer," yet every
+  implementation PR (#8/#12/#16/#19/#21) was SE-filed under the PO's single `ChristopherHoward1`
+  account — the "PO files" line was a donor/Mac **two-actor assumption** (agent pushes its own
+  branch; a separate human files) that doesn't fit a one-account setup where the Windows sandbox
+  is edit-only and the SE already does *all* mechanical git under that account. *Resolution (PO
+  decision):* the CLAUDE.md Implementation Handoff paragraph now states the SE performs the
+  mechanical git (commit attributed to the agent / push / file PR / execute merge on the PO's
+  instruction), with author/reviewer separation resting on **commit attribution + PO merge
+  authority**, not on who runs `gh`. Reworded in this retro PR (#22). Kept as a closed record so
+  it is not re-litigated from memory. Logged in the ledger as a template-design-flaw edge.
 - **Verify feasibility claims by executing them (process).** M1 orientation logged
   `mediapipe.solutions.pose` as feasible without running it, and it was false. Before a
   milestone depends on a library capability, exercise the **exact** API in the venv.
